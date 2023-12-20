@@ -28,7 +28,8 @@ type ESAPIV5 struct {
     ESAPIV0
 }
 
-func (s *ESAPIV5) NewScroll(indexNames string, scrollTime string, docBufferCount int, query string, slicedId, maxSlicedCount int, fields string) (scroll ScrollAPI, err error) {
+func (s *ESAPIV5) NewScroll(indexNames string, scrollTime string, docBufferCount int, query string, sort string,
+    slicedId int, maxSlicedCount int, fields string) (scroll ScrollAPI, err error) {
     url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
 
     var jsonBody []byte
@@ -47,6 +48,12 @@ func (s *ESAPIV5) NewScroll(indexNames string, scrollTime string, docBufferCount
             queryBody["query"] = map[string]interface{}{}
             queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
             queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
+        }
+
+        if len(sort) > 0 {
+            sortFields := make([]string, 0)
+            sortFields = append(sortFields, sort)
+            queryBody["sort"] = sortFields
         }
 
         if maxSlicedCount > 1 {

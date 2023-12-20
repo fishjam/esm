@@ -318,7 +318,8 @@ func (s *ESAPIV0) Refresh(name string) (err error) {
     return nil
 }
 
-func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int, query string, slicedId, maxSlicedCount int, fields string) (scroll ScrollAPI, err error) {
+func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int, query string, sort string,
+    slicedId int, maxSlicedCount int, fields string) (scroll ScrollAPI, err error) {
 
     // curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
     url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
@@ -338,6 +339,12 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
             queryBody["query"] = map[string]interface{}{}
             queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
             queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
+        }
+
+        if len(sort) > 0 {
+            sortFields := make([]string, 0)
+            sortFields = append(sortFields, sort)
+            queryBody["sort"] = sortFields
         }
 
         jsonBody, err = json.Marshal(queryBody)

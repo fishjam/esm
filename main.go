@@ -22,8 +22,8 @@ import (
 
 /***********************************************************************************************************************
 * curl -XPOST -H "Content-Type: application/json" http://localhost:9200/bank/account/_bulk?pretty --data-binary @accounts.json
-* esm --count=100 --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
-*   --output_file=bank_out.json
+* esm --count=100 --sort=account_number --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
+*   --truncate_output --output_file=bank_out.json
 ***********************************************************************************************************************/
 func main() {
     runtime.GOMAXPROCS(runtime.NumCPU())
@@ -121,6 +121,8 @@ func main() {
                 if errs != nil {
                     return
                 }
+                log.Infof("source es version: %s", srcESVersion.Version.Number)
+
                 if strings.HasPrefix(srcESVersion.Version.Number, "7.") {
                     log.Debug("source es is V7,", srcESVersion.Version.Number)
                     api := new(ESAPIV7)
@@ -162,7 +164,8 @@ func main() {
                 totalSize := 0
                 finishedSlice := 0
                 for slice := 0; slice < c.ScrollSliceSize; slice++ {
-                    scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query, slice, c.ScrollSliceSize, c.Fields)
+                    scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query,
+                        c.SortField, slice, c.ScrollSliceSize, c.Fields)
                     if err != nil {
                         log.Error(err)
                         return

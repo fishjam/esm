@@ -17,120 +17,124 @@ limitations under the License.
 package main
 
 import (
-	"sync"
-	"github.com/cheggaaa/pb"
-	log "github.com/cihub/seelog"
-	"os"
-	"bufio"
-	"encoding/json"
-	"io"
+    "bufio"
+    "encoding/json"
+    "github.com/cheggaaa/pb"
+    log "github.com/cihub/seelog"
+    "io"
+    "os"
+    "sync"
 )
 
-func checkFileIsExist(filename string) (bool) {
-	var exist = true;
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		exist = false;
-	}
-	return exist;
+func checkFileIsExist(filename string) bool {
+    var exist = true
+    if _, err := os.Stat(filename); os.IsNotExist(err) {
+        exist = false
+    }
+    return exist
 }
 
-func (m *Migrator) NewFileReadWorker(pb *pb.ProgressBar, wg *sync.WaitGroup)  {
-	log.Debug("start reading file")
-	f, err := os.Open(m.Config.DumpInputFile)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+func (m *Migrator) NewFileReadWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
+    log.Debug("start reading file")
+    f, err := os.Open(m.Config.DumpInputFile)
+    if err != nil {
+        log.Error(err)
+        return
+    }
 
-	defer f.Close()
-	r := bufio.NewReader(f)
-	lineCount := 0
-	for{
-		line,err := r.ReadString('\n')
-		if io.EOF == err || nil != err{
-			break
-		}
-		lineCount += 1
-		js := map[string]interface{}{}
+    defer f.Close()
+    r := bufio.NewReader(f)
+    lineCount := 0
+    for {
+        line, err := r.ReadString('\n')
+        if io.EOF == err || nil != err {
+            break
+        }
+        lineCount += 1
+        js := map[string]interface{}{}
 
-		err = DecodeJson(line, &js)
-		if err!=nil {
-			log.Error(err)
-			continue
-		}
-		m.DocChan <- js
-		pb.Increment()
-	}
+        err = DecodeJson(line, &js)
+        if err != nil {
+            log.Error(err)
+            continue
+        }
+        m.DocChan <- js
+        pb.Increment()
+    }
 
-	defer f.Close()
-	log.Debug("end reading file")
-	close(m.DocChan)
-	wg.Done()
+    defer f.Close()
+    log.Debug("end reading file")
+    close(m.DocChan)
+    wg.Done()
 }
 
 func (c *Migrator) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
-	var f *os.File
-	var err1   error;
+    var f *os.File
+    var err1 error
 
-	if checkFileIsExist(c.Config.DumpOutFile) {
-		f, err1 = os.OpenFile(c.Config.DumpOutFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-		if(err1!=nil){
-			log.Error(err1)
-			return
-		}
+    if checkFileIsExist(c.Config.DumpOutFile) {
+        flag := os.O_WRONLY
+        if c.Config.TruncateOutFile {
+            flag |= os.O_TRUNC
+        } else {
+            flag |= os.O_APPEND
+        }
+        f, err1 = os.OpenFile(c.Config.DumpOutFile, flag, os.ModeAppend)
+        if err1 != nil {
+            log.Error(err1)
+            return
+        }
 
-	}else {
-		f, err1 = os.Create(c.Config.DumpOutFile)
-		if(err1!=nil){
-			log.Error(err1)
-			return
-		}
-	}
+    } else {
+        f, err1 = os.Create(c.Config.DumpOutFile)
+        if err1 != nil {
+            log.Error(err1)
+            return
+        }
+    }
 
-	w := bufio.NewWriter(f)
+    w := bufio.NewWriter(f)
 
-	READ_DOCS:
-	for {
-		docI, open := <-c.DocChan
-		// this check is in case the document is an error with scroll stuff
-		if status, ok := docI["status"]; ok {
-			if status.(int) == 404 {
-				log.Error("error: ", docI["response"])
-				continue
-			}
-		}
+READ_DOCS:
+    for {
+        docI, open := <-c.DocChan
+        // this check is in case the document is an error with scroll stuff
+        if status, ok := docI["status"]; ok {
+            if status.(int) == 404 {
+                log.Error("error: ", docI["response"])
+                continue
+            }
+        }
 
-		// sanity check
-		for _, key := range []string{"_index", "_type", "_source", "_id"} {
-			if _, ok := docI[key]; !ok {
-				break READ_DOCS
-			}
-		}
+        // sanity check
+        for _, key := range []string{"_index", "_type", "_source", "_id"} {
+            if _, ok := docI[key]; !ok {
+                break READ_DOCS
+            }
+        }
 
-		jsr,err:=json.Marshal(docI)
-		log.Trace(string(jsr))
-		if(err!=nil){
-			log.Error(err)
-		}
-		n,err:=w.WriteString(string(jsr))
-		if(err!=nil){
-			log.Error(n,err)
-		}
-		w.WriteString("\n")
-		pb.Increment()
+        jsr, err := json.Marshal(docI)
+        log.Trace(string(jsr))
+        if err != nil {
+            log.Error(err)
+        }
+        n, err := w.WriteString(string(jsr))
+        if err != nil {
+            log.Error(n, err)
+        }
+        w.WriteString("\n")
+        pb.Increment()
 
-		// if channel is closed flush and gtfo
-		if !open {
-			goto WORKER_DONE
-		}
-	}
+        // if channel is closed flush and gtfo
+        if !open {
+            goto WORKER_DONE
+        }
+    }
 
-	WORKER_DONE:
-	w.Flush()
-	f.Close()
+WORKER_DONE:
+    w.Flush()
+    f.Close()
 
-	wg.Done()
-	log.Debug("file dump finished")
+    wg.Done()
+    log.Debug("file dump finished")
 }
-
-
