@@ -135,3 +135,28 @@ func (s *ScrollV7) Next(c *Migrator, bar *pb.ProgressBar) (done bool) {
 
 	return
 }
+
+// TODO: 返回空,从而在 compare + bulk 时有相同的处理逻辑?
+type EmptyScroll struct {
+	Dummy int
+}
+
+func (es *EmptyScroll) GetScrollId() string {
+	return ""
+}
+
+func (es *EmptyScroll) GetHitsTotal() int {
+	return 0
+}
+
+func (es *EmptyScroll) GetDocs() []interface{} {
+	return make([]interface{}, 0)
+}
+
+func (es *EmptyScroll) ProcessScrollResult(c *Migrator, bar *pb.ProgressBar) {
+
+}
+
+func (es *EmptyScroll) Next(c *Migrator, bar *pb.ProgressBar) (done bool) {
+	return true
+}

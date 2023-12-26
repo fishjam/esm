@@ -44,7 +44,6 @@ func (c *Migrator) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.Wai
 	taskTimeout := time.NewTimer(taskTimeOutDuration)
 	defer taskTimeout.Stop()
 
-
 READ_DOCS:
 	for {
 		idleTimeout.Reset(idleDuration)
@@ -138,7 +137,6 @@ READ_DOCS:
 				log.Error(err)
 			}
 
-
 			// append the doc to the main buffer
 			mainBuf.Write(docBuf.Bytes())
 			// reset for next document
@@ -147,7 +145,7 @@ READ_DOCS:
 			docBuf.Reset()
 
 			// if we approach the 100mb es limit, flush to es and reset mainBuf
-			if mainBuf.Len()+docBuf.Len() > (c.Config.BulkSizeInMB * 1024*1024) {
+			if mainBuf.Len()+docBuf.Len() > (c.Config.BulkSizeInMB * 1024 * 1024) {
 				goto CLEAN_BUFFER
 			}
 
@@ -166,7 +164,7 @@ READ_DOCS:
 		log.Trace("clean buffer, and execute bulk insert")
 		pb.Add(bulkItemSize)
 		bulkItemSize = 0
-		if c.Config.SleepSecondsAfterEachBulk >0{
+		if c.Config.SleepSecondsAfterEachBulk > 0 {
 			time.Sleep(time.Duration(c.Config.SleepSecondsAfterEachBulk) * time.Second)
 		}
 	}

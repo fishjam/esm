@@ -406,12 +406,12 @@ func (s *ESAPIV0) DeleteScroll(scrollId string) error {
 	id := bytes.NewBufferString(scrollId)
 	url := fmt.Sprintf("%s/_search/scroll?scroll_id=%s", s.Host, id)
 	if len(scrollId) > 0 {
-		body, err := Request(false, "DELETE", url, s.Auth, nil, s.HttpProxy)
+		_, err := Request(false, "DELETE", url, s.Auth, nil, s.HttpProxy)
 		if err != nil {
 			log.Error(err)
 			return err
 		}
-		log.Infof("delete scroll, result=%s", body)
+		//log.Infof("delete scroll, result=%s", body)
 	}
 	return nil
 }
