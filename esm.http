@@ -1,9 +1,9 @@
 ### GET Target
-GET http://127.0.0.1:9200/bank_esm/account/1
+GET http://127.0.0.1:9200/bank_sync/account/1
 
 ### DELETE TARGET
-DELETE http://127.0.0.1:9200/bank_esm/account/204
+DELETE http://127.0.0.1:9200/bank_sync/account/44
 
 ### delete source
-DELETE http://127.0.0.1:9200/bank/account/123
+DELETE http://127.0.0.1:9200/bank/account/50
 

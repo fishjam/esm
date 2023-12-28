@@ -342,7 +342,7 @@ func (m *Migrator) bulkRecords(bulkOp BulkOperation, dstEsApi ESAPI, targetIndex
 
 	for docId, docData := range diffDocMaps {
 		docI := docData.(map[string]interface{})
-		log.Infof("now will bulk %s docId=%s, docData=%+v", bulkOp, docId, docData)
+		log.Debugf("now will bulk %s docId=%s, docData=%+v", bulkOp, docId, docData)
 		//tempDestIndexName = docI["_index"].(string)
 		//tempTargetTypeName = docI["_type"].(string)
 		var strOperation string
@@ -402,11 +402,23 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 	needScrollSrc := true
 	needScrollDest := true
 
+	addCount := 0
+	updateCount := 0
+	deleteCount := 0
+
+	//TODO: 进度计算,分为 [ scroll src/dst + index ] => delete 几个部分
+	srcBar := pb.New(1).Prefix("Progress")
+	//srcBar := pb.New(1).Prefix("Source")
+	//dstBar := pb.New(100).Prefix("Dest")
+	//pool, err := pb.StartPool(srcBar, dstBar)
+
 	for {
 		if srcScroll == nil {
 			srcScroll = VerifyWithResult(srcEsApi.NewScroll(cfg.SourceIndexNames, cfg.ScrollTime, cfg.DocBufferCount, cfg.Query,
 				cfg.SortField, 0, cfg.ScrollSliceSize, cfg.Fields)).(ScrollAPI)
 			log.Infof("src total count=%d", srcScroll.GetHitsTotal())
+			srcBar.Total = int64(srcScroll.GetHitsTotal())
+			srcBar.Start()
 		} else if needScrollSrc {
 			srcScroll = VerifyWithResult(srcEsApi.NextScroll(cfg.ScrollTime, srcScroll.GetScrollId())).(ScrollAPI)
 		}
@@ -416,10 +428,16 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 				cfg.SortField, 0, cfg.ScrollSliceSize, cfg.Fields)
 			if err != nil {
 				log.Infof("can not scroll for %s, reason:%s", cfg.TargetIndexName, err.Error())
-
 				//生成一个 empty 的, 相当于直接bulk?
 				dstScroll = emptyScroll
+
+				//没有 dest index,以 src 的条数作为总数
+				//dstBar.Total = int64(srcScroll.GetHitsTotal()) // = pb.New(srcScroll.GetHitsTotal()).Prefix("Dest")
+			} else {
+				//有 dest index,
+				//dstBar.Total = int64(dstScroll.GetHitsTotal()) // pb.New(dstScroll.GetHitsTotal()).Prefix("Dest")
 			}
+			//dstBar.Start()
 			log.Infof("dst total count=%d", dstScroll.GetHitsTotal())
 		} else if needScrollDest {
 			dstScroll = VerifyWithResult(dstEsApi.NextScroll(cfg.ScrollTime, dstScroll.GetScrollId())).(ScrollAPI)
@@ -440,12 +458,14 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 					if !reflect.DeepEqual(srcSource, dstSource) {
 						//不相等, 则需要更新
 						diffDocMaps[destId] = srcSource
+						updateCount++
 					} else {
 						//完全相等, 则不需要处理
 					}
 				} else {
 					dstDocMaps[destId] = dstSource
 				}
+				//dstBar.Increment()
 			}
 			dstRecordIndex += len(dstScroll.GetDocs())
 		}
@@ -462,10 +482,12 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 				if len(lastDestId) == 0 {
 					//没有 destId, 表示 目标 index 中没有数据, 直接全部更新
 					diffDocMaps[srcId] = srcSource
+					addCount++
 				} else if dstSource, ok := dstDocMaps[srcId]; ok { //能从 dstDocMaps 中找到相同ID的数据
 					if !reflect.DeepEqual(srcSource, dstSource) {
 						//不完全相同,需要更新,否则忽略
 						diffDocMaps[srcId] = srcSource
+						updateCount++
 					} else {
 						//从 dst 中删除相同的
 						delete(dstDocMaps, srcId)
@@ -475,16 +497,18 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 					if srcId < lastDestId {
 						//dest 已经超过当前的 srcId, 表示 dst 中不存在
 						diffDocMaps[srcId] = srcSource
+						addCount++
 					} else {
 						srcDocMaps[srcId] = srcSource
 					}
 				}
+				srcBar.Increment()
 			}
 			srcRecordIndex += len(srcScroll.GetDocs())
 		}
 
 		if len(diffDocMaps) > 0 {
-			log.Infof("now will bulk index %d records", len(diffDocMaps))
+			log.Debugf("now will bulk index %d records", len(diffDocMaps))
 			_ = Verify(m.bulkRecords(opIndex, dstEsApi, cfg.TargetIndexName, srcType, diffDocMaps))
 			diffDocMaps = make(map[string]interface{})
 		}
@@ -514,23 +538,34 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 
 		if (!needScrollSrc || (len(srcScroll.GetDocs()) == 0 || len(srcScroll.GetDocs()) < cfg.DocBufferCount)) &&
 			(!needScrollDest || (len(dstScroll.GetDocs()) == 0 || len(dstScroll.GetDocs()) < cfg.DocBufferCount)) {
-			log.Warnf("can not find more, will quit, and index %d, delete %d", len(srcDocMaps), len(dstDocMaps))
+			log.Debugf("can not find more, will quit, and index %d, delete %d", len(srcDocMaps), len(dstDocMaps))
 
 			if len(srcDocMaps) > 0 {
+				addCount += len(srcDocMaps)
 				_ = Verify(m.bulkRecords(opIndex, dstEsApi, cfg.TargetIndexName, srcType, srcDocMaps))
 			}
 			if len(dstDocMaps) > 0 {
 				//最后在 dst 中还有遗留的,表示 dst 中多的.需要删除
+				deleteCount += len(dstDocMaps)
 				_ = Verify(m.bulkRecords(opDelete, dstEsApi, cfg.TargetIndexName, srcType, dstDocMaps))
 			}
 			break
 		}
 
 		//目标不存在 或 src 还没有查询到和 dest 一样的地方
+		if cfg.SleepSecondsAfterEachBulk > 0 {
+			time.Sleep(time.Duration(cfg.SleepSecondsAfterEachBulk) * time.Second)
+		}
 	}
 	_ = Verify(srcEsApi.DeleteScroll(srcScroll.GetScrollId()))
 	_ = Verify(dstEsApi.DeleteScroll(dstScroll.GetScrollId()))
 
-	log.Infof("srcRecordIndex=%d, dstRecordIndex=%d", srcRecordIndex, dstRecordIndex)
-	log.Infof("diffDocMaps=%+v", diffDocMaps)
+	srcBar.FinishPrint("Source End")
+	//dstBar.FinishPrint("Dest End")
+	//pool.Stop()
+
+	log.Infof("srcRecordIndex=%d, dstRecordIndex=%d, add=%d, update=%d, delete=%d",
+		srcRecordIndex, dstRecordIndex,
+		addCount, updateCount, deleteCount)
+	//log.Infof("diffDocMaps=%+v", diffDocMaps)
 }

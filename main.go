@@ -19,15 +19,16 @@ import (
 
 /***********************************************************************************************************************
 * curl -XPOST -H "Content-Type: application/json" http://localhost:9200/bank/account/_bulk?pretty --data-binary @accounts.json
-* esm --count=100 --sort=account_number --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
-*   --truncate_output --output_file=bank_out.json
-*
-* esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank --truncate_output --skip=_index --output_file=src.json
-* && esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank_esm --truncate_output --skip=_index --output_file=dst.json
 *
 * sync:
-*   esm --sync --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
+*   esm --sync --count=100 --sleep=1
+*     --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
 *     --dest=http://localhost:9200 --dest_index=bank_sync --dest_proxy=http://localhost:8888
+*
+* compare:
+*   esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank --truncate_output --skip=_index --output_file=src.json
+*   && esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank_sync --truncate_output --skip=_index --output_file=dst.json
+*   diff -W 200 -ry --suppress-common-lines src.json dst.json
 ***********************************************************************************************************************/
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
