@@ -67,10 +67,10 @@ func (s *ESAPIV0) ClusterVersion() *ClusterVersion {
 	return s.Version
 }
 
-func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
+func (s *ESAPIV0) Bulk(data *bytes.Buffer) error {
 	if data == nil || data.Len() == 0 {
 		log.Trace("data is empty, skip")
-		return
+		return nil
 	}
 	data.WriteRune('\n')
 	url := fmt.Sprintf("%s/_bulk", s.Host)
@@ -78,8 +78,9 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 	body, err := Request(s.Compress, "POST", url, s.Auth, data, s.HttpProxy)
 
 	if err != nil {
+		data.Reset()
 		log.Error(err)
-		return
+		return err
 	}
 	response := BulkResponse{}
 	err = DecodeJson(body, &response)
@@ -90,6 +91,7 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 	}
 
 	data.Reset()
+	return err
 }
 
 func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
