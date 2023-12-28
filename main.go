@@ -24,6 +24,10 @@ import (
 *
 * esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank --truncate_output --skip=_index --output_file=src.json
 * && esm --count=100 --sort=_id --source=http://localhost:9200 --src_indexes=bank_esm --truncate_output --skip=_index --output_file=dst.json
+*
+* sync:
+*   esm --sync --source=http://localhost:9200 --src_indexes=bank --source_proxy=http://localhost:8888
+*     --dest=http://localhost:9200 --dest_index=bank_sync --dest_proxy=http://localhost:8888
 ***********************************************************************************************************************/
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -83,8 +87,8 @@ func main() {
 
 	if c.Sync {
 		//sync 功能时,只支持一个 index:
-		if len(c.SourceIndexNames) != 1 || len(c.TargetIndexName) != 1 {
-			log.Error("migration sync only support 1 source index to 1 target index")
+		if len(c.SourceIndexNames) == 0 || len(c.TargetIndexName) == 0 {
+			log.Error("migration sync only support source 1 index to 1 target index")
 			return
 		}
 		migrator.SourceESAPI = migrator.ParseEsApi(true, c.SourceEs, c.SourceEsAuthStr, c.SourceProxy, c.Compress)
