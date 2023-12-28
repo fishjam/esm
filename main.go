@@ -81,6 +81,26 @@ func main() {
 		showBar = false
 	}
 
+	if c.Sync {
+		//sync 功能时,只支持一个 index:
+		if len(c.SourceIndexNames) != 1 || len(c.TargetIndexName) != 1 {
+			log.Error("migration sync only support 1 source index to 1 target index")
+			return
+		}
+		migrator.SourceESAPI = migrator.ParseEsApi(true, c.SourceEs, c.SourceEsAuthStr, c.SourceProxy, c.Compress)
+		if migrator.SourceESAPI == nil {
+			log.Error("can not parse source es api")
+			return
+		}
+		migrator.TargetESAPI = migrator.ParseEsApi(false, c.TargetEs, c.TargetEsAuthStr, c.TargetProxy, false)
+		if migrator.TargetESAPI == nil {
+			log.Error("can not parse target es api")
+			return
+		}
+		migrator.SyncBetweenIndex(migrator.SourceESAPI, migrator.TargetESAPI, c)
+		return
+	}
+
 	//至少输出一次
 	if c.RepeatOutputTimes < 1 {
 		c.RepeatOutputTimes = 1
@@ -110,13 +130,8 @@ func main() {
 			//dealing with input
 			if len(c.SourceEs) > 0 {
 				//dealing with basic auth
-				if len(c.SourceEsAuthStr) > 0 && strings.Contains(c.SourceEsAuthStr, ":") {
-					authArray := strings.Split(c.SourceEsAuthStr, ":")
-					auth := Auth{User: authArray[0], Pass: authArray[1]}
-					migrator.SourceAuth = &auth
-				}
 
-				migrator.SourceESAPI = migrator.ParseEsApi(true, c.SourceEs, migrator.SourceAuth,
+				migrator.SourceESAPI = migrator.ParseEsApi(true, c.SourceEs, c.SourceEsAuthStr,
 					migrator.Config.SourceProxy, c.Compress)
 				if migrator.SourceESAPI == nil {
 					log.Error("can not parse source es api")
@@ -227,7 +242,8 @@ func main() {
 				}
 
 				//get target es api
-				migrator.TargetESAPI = migrator.ParseEsApi(false, c.TargetEs, migrator.TargetAuth, migrator.Config.TargetProxy, false)
+				migrator.TargetESAPI = migrator.ParseEsApi(false, c.TargetEs, c.TargetEsAuthStr,
+					migrator.Config.TargetProxy, false)
 				if migrator.TargetESAPI == nil {
 					log.Error("can not parse target es api")
 					return

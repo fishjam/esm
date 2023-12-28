@@ -23,6 +23,7 @@ import (
 	"github.com/cheggaaa/pb"
 	"io"
 	"io/ioutil"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -30,20 +31,38 @@ import (
 	log "github.com/cihub/seelog"
 )
 
-func (c *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
+type BulkOperation uint8
+
+const (
+	opIndex BulkOperation = iota
+	opDelete
+)
+
+func (op BulkOperation) String() string {
+	switch op {
+	case opIndex:
+		return "opIndex"
+	case opDelete:
+		return "opDelete"
+	default:
+		return fmt.Sprintf("unknown:%d", op)
+	}
+}
+
+func (m *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
 	//update replica and refresh_interval
 	for name, interval := range sourceIndexRefreshSettings {
 		tempIndexSettings := getEmptyIndexSettings()
 		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval
 		//tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 1
-		c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
-		if c.Config.Refresh {
-			c.TargetESAPI.Refresh(name)
+		m.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
+		if m.Config.Refresh {
+			m.TargetESAPI.Refresh(name)
 		}
 	}
 }
 
-func (c *Migrator) ClusterVersion(host string, auth *Auth, proxy string) (*ClusterVersion, []error) {
+func (m *Migrator) ClusterVersion(host string, auth *Auth, proxy string) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
 	resp, body, errs := Get(url, auth, proxy)
@@ -70,9 +89,19 @@ func (c *Migrator) ClusterVersion(host string, auth *Auth, proxy string) (*Clust
 	return version, nil
 }
 
-func (c *Migrator) ParseEsApi(isSource bool, host string, auth *Auth, proxy string, compress bool) ESAPI {
+func (m *Migrator) ParseEsApi(isSource bool, host string, authStr string, proxy string, compress bool) ESAPI {
+	var auth *Auth = nil
+	if len(authStr) > 0 && strings.Contains(authStr, ":") {
+		authArray := strings.Split(authStr, ":")
+		auth = &Auth{User: authArray[0], Pass: authArray[1]}
+		if isSource {
+			m.SourceAuth = auth
+		} else {
+			m.TargetAuth = auth
+		}
+	}
 
-	esVersion, errs := c.ClusterVersion(host, auth, proxy)
+	esVersion, errs := m.ClusterVersion(host, auth, proxy)
 	if errs != nil {
 		return nil
 	}
@@ -125,10 +154,10 @@ func (c *Migrator) ParseEsApi(isSource bool, host string, auth *Auth, proxy stri
 	}
 }
 
-func (c *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
+func (m *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 	health := api.ClusterHealth()
 
-	if !c.Config.WaitForGreen {
+	if !m.Config.WaitForGreen {
 		return health, true
 	}
 
@@ -136,7 +165,7 @@ func (c *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 		return health, false
 	}
 
-	if c.Config.WaitForGreen == false && health.Status == "yellow" {
+	if m.Config.WaitForGreen == false && health.Status == "yellow" {
 		return health, true
 	}
 
@@ -147,7 +176,7 @@ func (c *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 	return health, false
 }
 
-func (c *Migrator) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
+func (m *Migrator) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
 
 	log.Debug("start es bulk worker")
 
@@ -169,7 +198,7 @@ READ_DOCS:
 		idleTimeout.Reset(idleDuration)
 		taskTimeout.Reset(taskTimeOutDuration)
 		select {
-		case docI, open := <-c.DocChan:
+		case docI, open := <-m.DocChan:
 			var err error
 			log.Trace("read doc from channel,", docI)
 			// this check is in case the document is an error with scroll stuff
@@ -192,12 +221,12 @@ READ_DOCS:
 			tempDestIndexName = docI["_index"].(string)
 			tempTargetTypeName = docI["_type"].(string)
 
-			if c.Config.TargetIndexName != "" {
-				tempDestIndexName = c.Config.TargetIndexName
+			if m.Config.TargetIndexName != "" {
+				tempDestIndexName = m.Config.TargetIndexName
 			}
 
-			if c.Config.OverrideTypeName != "" {
-				tempTargetTypeName = c.Config.OverrideTypeName
+			if m.Config.OverrideTypeName != "" {
+				tempTargetTypeName = m.Config.OverrideTypeName
 			}
 
 			doc := Document{
@@ -207,12 +236,12 @@ READ_DOCS:
 				Id:     docI["_id"].(string),
 			}
 
-			if c.Config.RegenerateID {
+			if m.Config.RegenerateID {
 				doc.Id = ""
 			}
 
-			if c.Config.RenameFields != "" {
-				kvs := strings.Split(c.Config.RenameFields, ",")
+			if m.Config.RenameFields != "" {
+				kvs := strings.Split(m.Config.RenameFields, ",")
 				for _, i := range kvs {
 					fvs := strings.Split(i, ":")
 					oldField := strings.TrimSpace(fvs[0])
@@ -265,7 +294,7 @@ READ_DOCS:
 			docBuf.Reset()
 
 			// if we approach the 100mb es limit, flush to es and reset mainBuf
-			if mainBuf.Len()+docBuf.Len() > (c.Config.BulkSizeInMB * 1024 * 1024) {
+			if mainBuf.Len()+docBuf.Len() > (m.Config.BulkSizeInMB * 1024 * 1024) {
 				goto CLEAN_BUFFER
 			}
 
@@ -280,12 +309,12 @@ READ_DOCS:
 		goto READ_DOCS
 
 	CLEAN_BUFFER:
-		c.TargetESAPI.Bulk(&mainBuf)
+		m.TargetESAPI.Bulk(&mainBuf)
 		log.Trace("clean buffer, and execute bulk insert")
 		pb.Add(bulkItemSize)
 		bulkItemSize = 0
-		if c.Config.SleepSecondsAfterEachBulk > 0 {
-			time.Sleep(time.Duration(c.Config.SleepSecondsAfterEachBulk) * time.Second)
+		if m.Config.SleepSecondsAfterEachBulk > 0 {
+			time.Sleep(time.Duration(m.Config.SleepSecondsAfterEachBulk) * time.Second)
 		}
 	}
 WORKER_DONE:
@@ -293,9 +322,215 @@ WORKER_DONE:
 		mainBuf.Write(docBuf.Bytes())
 		bulkItemSize++
 	}
-	c.TargetESAPI.Bulk(&mainBuf)
+	m.TargetESAPI.Bulk(&mainBuf)
 	log.Trace("bulk insert")
 	pb.Add(bulkItemSize)
 	bulkItemSize = 0
 	wg.Done()
+}
+
+func (m *Migrator) bulkRecords(bulkOp BulkOperation, dstEsApi ESAPI, targetIndex string, targetType string, diffDocMaps map[string]interface{}) error {
+	//var err error
+	docCount := 0
+	bulkItemSize := 0
+	mainBuf := bytes.Buffer{}
+	docBuf := bytes.Buffer{}
+	docEnc := json.NewEncoder(&docBuf)
+
+	//var tempDestIndexName string
+	//var tempTargetTypeName string
+
+	for docId, docData := range diffDocMaps {
+		docI := docData.(map[string]interface{})
+		log.Infof("now will bulk %s docId=%s, docData=%+v", bulkOp, docId, docData)
+		//tempDestIndexName = docI["_index"].(string)
+		//tempTargetTypeName = docI["_type"].(string)
+		var strOperation string
+		doc := Document{
+			Index: targetIndex,
+			Type:  targetType,
+			Id:    docId, // docI["_id"].(string),
+		}
+
+		switch bulkOp {
+		case opIndex:
+			doc.source = docI // docI["_source"].(map[string]interface{}),
+			strOperation = "index"
+		case opDelete:
+			strOperation = "delete"
+			//do nothing
+		}
+
+		// encode the doc and and the _source field for a bulk request
+
+		post := map[string]Document{
+			strOperation: doc,
+		}
+		_ = Verify(docEnc.Encode(post))
+		if bulkOp == opIndex {
+			_ = Verify(docEnc.Encode(doc.source))
+		}
+		// append the doc to the main buffer
+		mainBuf.Write(docBuf.Bytes())
+		// reset for next document
+		bulkItemSize++
+		docCount++
+		docBuf.Reset()
+	}
+
+	if mainBuf.Len() > 0 {
+		dstEsApi.Bulk(&mainBuf)
+	}
+	return nil
+}
+
+func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config) {
+	// _id => value
+	srcDocMaps := make(map[string]interface{})
+	dstDocMaps := make(map[string]interface{})
+	diffDocMaps := make(map[string]interface{})
+
+	srcRecordIndex := 0
+	dstRecordIndex := 0
+	var err error
+	srcType := ""
+	var srcScroll ScrollAPI = nil
+	var dstScroll ScrollAPI = nil
+	var emptyScroll = &EmptyScroll{}
+	lastSrcId := ""
+	lastDestId := ""
+	needScrollSrc := true
+	needScrollDest := true
+
+	for {
+		if srcScroll == nil {
+			srcScroll = VerifyWithResult(srcEsApi.NewScroll(cfg.SourceIndexNames, cfg.ScrollTime, cfg.DocBufferCount, cfg.Query,
+				cfg.SortField, 0, cfg.ScrollSliceSize, cfg.Fields)).(ScrollAPI)
+			log.Infof("src total count=%d", srcScroll.GetHitsTotal())
+		} else if needScrollSrc {
+			srcScroll = VerifyWithResult(srcEsApi.NextScroll(cfg.ScrollTime, srcScroll.GetScrollId())).(ScrollAPI)
+		}
+
+		if dstScroll == nil {
+			dstScroll, err = dstEsApi.NewScroll(cfg.TargetIndexName, cfg.ScrollTime, cfg.DocBufferCount, cfg.Query,
+				cfg.SortField, 0, cfg.ScrollSliceSize, cfg.Fields)
+			if err != nil {
+				log.Infof("can not scroll for %s, reason:%s", cfg.TargetIndexName, err.Error())
+
+				//生成一个 empty 的, 相当于直接bulk?
+				dstScroll = emptyScroll
+			}
+			log.Infof("dst total count=%d", dstScroll.GetHitsTotal())
+		} else if needScrollDest {
+			dstScroll = VerifyWithResult(dstEsApi.NextScroll(cfg.ScrollTime, dstScroll.GetScrollId())).(ScrollAPI)
+		}
+
+		//从目标 index 中查询,并放入 destMap, 如果没有则是空
+		if needScrollDest {
+			for idx, dstDocI := range dstScroll.GetDocs() {
+				destId := dstDocI.(map[string]interface{})["_id"].(string)
+				dstSource := dstDocI.(map[string]interface{})["_source"]
+				lastDestId = destId
+				log.Debugf("dst [%d]: dstId=%s", dstRecordIndex+idx, destId)
+
+				if srcSource, found := srcDocMaps[destId]; found {
+					delete(srcDocMaps, destId)
+
+					//如果从 src 的 map 中找到匹配地项
+					if !reflect.DeepEqual(srcSource, dstSource) {
+						//不相等, 则需要更新
+						diffDocMaps[destId] = srcSource
+					} else {
+						//完全相等, 则不需要处理
+					}
+				} else {
+					dstDocMaps[destId] = dstSource
+				}
+			}
+			dstRecordIndex += len(dstScroll.GetDocs())
+		}
+
+		//先将 src 的当前批次查出并放入 map
+		if needScrollSrc {
+			for idx, srcDocI := range srcScroll.GetDocs() {
+				srcId := srcDocI.(map[string]interface{})["_id"].(string)
+				srcSource := srcDocI.(map[string]interface{})["_source"]
+				srcType = srcDocI.(map[string]interface{})["_type"].(string)
+				lastSrcId = srcId
+				log.Debugf("src [%d]: srcId=%s", srcRecordIndex+idx, srcId)
+
+				if len(lastDestId) == 0 {
+					//没有 destId, 表示 目标 index 中没有数据, 直接全部更新
+					diffDocMaps[srcId] = srcSource
+				} else if dstSource, ok := dstDocMaps[srcId]; ok { //能从 dstDocMaps 中找到相同ID的数据
+					if !reflect.DeepEqual(srcSource, dstSource) {
+						//不完全相同,需要更新,否则忽略
+						diffDocMaps[srcId] = srcSource
+					} else {
+						//从 dst 中删除相同的
+						delete(dstDocMaps, srcId)
+					}
+				} else {
+					//找不到相同的 id, 可能是 dst 还没找到, 或者 dst 中不存在
+					if srcId < lastDestId {
+						//dest 已经超过当前的 srcId, 表示 dst 中不存在
+						diffDocMaps[srcId] = srcSource
+					} else {
+						srcDocMaps[srcId] = srcSource
+					}
+				}
+			}
+			srcRecordIndex += len(srcScroll.GetDocs())
+		}
+
+		if len(diffDocMaps) > 0 {
+			log.Infof("now will bulk index %d records", len(diffDocMaps))
+			_ = Verify(m.bulkRecords(opIndex, dstEsApi, cfg.TargetIndexName, srcType, diffDocMaps))
+			diffDocMaps = make(map[string]interface{})
+		}
+
+		if lastSrcId == lastDestId {
+			needScrollSrc = true
+			needScrollDest = true
+		} else if len(lastDestId) == 0 || (lastSrcId < lastDestId || (needScrollDest == true && len(dstScroll.GetDocs()) == 0)) {
+			//上一次要求遍历 dest,但遍历出空
+			needScrollSrc = true
+			needScrollDest = false
+		} else if lastSrcId > lastDestId || (needScrollSrc == true && len(srcScroll.GetDocs()) == 0) {
+			//上一次要求遍历 src, 但遍历出空
+			needScrollSrc = false
+			needScrollDest = true
+		} else {
+			panic("TODO:")
+		}
+
+		//如果 src 和 dst 都遍历完毕, 才退出
+		log.Debugf("lastSrcId=%s, lastDestId=%s, "+
+			"needScrollSrc=%t, len(srcScroll.GetDocs()=%d, "+
+			"needScrollDest=%t, len(dstScroll.GetDocs())=%d",
+			lastSrcId, lastDestId,
+			needScrollSrc, len(srcScroll.GetDocs()),
+			needScrollDest, len(dstScroll.GetDocs()))
+
+		if (!needScrollSrc || (len(srcScroll.GetDocs()) == 0 || len(srcScroll.GetDocs()) < cfg.DocBufferCount)) &&
+			(!needScrollDest || (len(dstScroll.GetDocs()) == 0 || len(dstScroll.GetDocs()) < cfg.DocBufferCount)) {
+			log.Warnf("can not find more, will quit, and index %d, delete %d", len(srcDocMaps), len(dstDocMaps))
+
+			if len(srcDocMaps) > 0 {
+				_ = Verify(m.bulkRecords(opIndex, dstEsApi, cfg.TargetIndexName, srcType, srcDocMaps))
+			}
+			if len(dstDocMaps) > 0 {
+				//最后在 dst 中还有遗留的,表示 dst 中多的.需要删除
+				_ = Verify(m.bulkRecords(opDelete, dstEsApi, cfg.TargetIndexName, srcType, dstDocMaps))
+			}
+			break
+		}
+
+		//目标不存在 或 src 还没有查询到和 dest 一样的地方
+	}
+	_ = Verify(srcEsApi.DeleteScroll(srcScroll.GetScrollId()))
+	_ = Verify(dstEsApi.DeleteScroll(dstScroll.GetScrollId()))
+
+	log.Infof("srcRecordIndex=%d, dstRecordIndex=%d", srcRecordIndex, dstRecordIndex)
+	log.Infof("diffDocMaps=%+v", diffDocMaps)
 }
