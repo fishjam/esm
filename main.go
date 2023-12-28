@@ -2,14 +2,11 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
-	"fmt"
 	"github.com/cheggaaa/pb"
 	log "github.com/cihub/seelog"
 	goflags "github.com/jessevdk/go-flags"
 	"github.com/mattn/go-isatty"
 	"io"
-	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -453,121 +450,4 @@ func main() {
 	}
 
 	log.Info("data migration finished.")
-}
-
-func (c *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
-	//update replica and refresh_interval
-	for name, interval := range sourceIndexRefreshSettings {
-		tempIndexSettings := getEmptyIndexSettings()
-		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval
-		//tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 1
-		c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
-		if c.Config.Refresh {
-			c.TargetESAPI.Refresh(name)
-		}
-	}
-}
-
-func (c *Migrator) ClusterVersion(host string, auth *Auth, proxy string) (*ClusterVersion, []error) {
-
-	url := fmt.Sprintf("%s", host)
-	resp, body, errs := Get(url, auth, proxy)
-
-	if resp != nil && resp.Body != nil {
-		io.Copy(ioutil.Discard, resp.Body)
-		defer resp.Body.Close()
-	}
-
-	if errs != nil {
-		log.Error(errs)
-		return nil, errs
-	}
-
-	log.Debug(body)
-
-	version := &ClusterVersion{}
-	err := json.Unmarshal([]byte(body), version)
-
-	if err != nil {
-		log.Error(body, errs)
-		return nil, errs
-	}
-	return version, nil
-}
-
-func (c *Migrator) ParseEsApi(isSource bool, host string, auth *Auth, proxy string, compress bool) ESAPI {
-
-	esVersion, errs := c.ClusterVersion(host, auth, proxy)
-	if errs != nil {
-		return nil
-	}
-
-	esInfo := "dest"
-	if isSource {
-		esInfo = "source"
-	}
-
-	log.Infof("%s es version: %s", esInfo, esVersion.Version.Number)
-	if strings.HasPrefix(esVersion.Version.Number, "7.") {
-		log.Debug("es is V7,", esVersion.Version.Number)
-		api := new(ESAPIV7)
-		api.Host = host
-		api.Compress = compress
-		api.Auth = auth
-		api.HttpProxy = proxy
-		api.Version = esVersion
-		return api
-		//migrator.SourceESAPI = api
-	} else if strings.HasPrefix(esVersion.Version.Number, "6.") {
-		log.Debug("es is V6,", esVersion.Version.Number)
-		api := new(ESAPIV6)
-		api.Host = host
-		api.Compress = compress
-		api.Auth = auth
-		api.HttpProxy = proxy
-		api.Version = esVersion
-		return api
-		//migrator.SourceESAPI = api
-	} else if strings.HasPrefix(esVersion.Version.Number, "5.") {
-		log.Debug("es is V5,", esVersion.Version.Number)
-		api := new(ESAPIV5)
-		api.Host = host
-		api.Compress = compress
-		api.Auth = auth
-		api.HttpProxy = proxy
-		api.Version = esVersion
-		return api
-		//migrator.SourceESAPI = api
-	} else {
-		log.Debug("es is not V5,", esVersion.Version.Number)
-		api := new(ESAPIV0)
-		api.Host = host
-		api.Compress = compress
-		api.Auth = auth
-		api.HttpProxy = proxy
-		api.Version = esVersion
-		return api
-	}
-}
-
-func (c *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
-	health := api.ClusterHealth()
-
-	if !c.Config.WaitForGreen {
-		return health, true
-	}
-
-	if health.Status == "red" {
-		return health, false
-	}
-
-	if c.Config.WaitForGreen == false && health.Status == "yellow" {
-		return health, true
-	}
-
-	if health.Status == "green" {
-		return health, true
-	}
-
-	return health, false
 }
