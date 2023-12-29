@@ -379,7 +379,7 @@ func (m *Migrator) bulkRecords(bulkOp BulkOperation, dstEsApi ESAPI, targetIndex
 	}
 
 	if mainBuf.Len() > 0 {
-		dstEsApi.Bulk(&mainBuf)
+		_ = Verify(dstEsApi.Bulk(&mainBuf))
 	}
 	return nil
 }
@@ -488,10 +488,9 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 						//不完全相同,需要更新,否则忽略
 						diffDocMaps[srcId] = srcSource
 						updateCount++
-					} else {
-						//从 dst 中删除相同的
-						delete(dstDocMaps, srcId)
 					}
+					//从 dst 中删除相同的
+					delete(dstDocMaps, srcId)
 				} else {
 					//找不到相同的 id, 可能是 dst 还没找到, 或者 dst 中不存在
 					if srcId < lastDestId {

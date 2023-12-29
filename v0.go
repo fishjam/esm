@@ -86,7 +86,7 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) error {
 	err = DecodeJson(body, &response)
 	if err == nil {
 		if response.Errors {
-			fmt.Println(body)
+			log.Warnf("bulk error:%s", body)
 		}
 	}
 
