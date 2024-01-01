@@ -24,8 +24,8 @@ import (
 	log "github.com/cihub/seelog"
 	"io"
 	"io/ioutil"
-	"strings"
 	"regexp"
+	"strings"
 )
 
 type ESAPIV7 struct {
@@ -106,7 +106,7 @@ func (s *ESAPIV7) NextScroll(scrollTime string, scrollId string) (interface{}, e
 	id := bytes.NewBufferString(scrollId)
 
 	url := fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	body,err:=DoRequest(s.Compress,"GET",url,s.Auth,nil,s.HttpProxy)
+	body, err := DoRequest(s.Compress, "GET", url, s.Auth, nil, s.HttpProxy)
 
 	if err != nil {
 		//log.Error(errs)
@@ -123,21 +123,19 @@ func (s *ESAPIV7) NextScroll(scrollTime string, scrollId string) (interface{}, e
 	return scroll, nil
 }
 
-
-func (s *ESAPIV7) GetIndexSettings(indexNames string) (*Indexes,error){
+func (s *ESAPIV7) GetIndexSettings(indexNames string) (*Indexes, error) {
 	return s.ESAPIV0.GetIndexSettings(indexNames)
 }
 
-func (s *ESAPIV7) UpdateIndexSettings(indexName string,settings map[string]interface{})(error){
-	return s.ESAPIV0.UpdateIndexSettings(indexName,settings)
+func (s *ESAPIV7) UpdateIndexSettings(indexName string, settings map[string]interface{}) error {
+	return s.ESAPIV0.UpdateIndexSettings(indexName, settings)
 }
-
 
 func (s *ESAPIV7) GetIndexMappings(copyAllIndexes bool, indexNames string) (string, int, *Indexes, error) {
 	url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
-	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
+	resp, body, errs := Get(url, s.Auth, s.HttpProxy)
 
-	if resp!=nil&& resp.Body!=nil{
+	if resp != nil && resp.Body != nil {
 		io.Copy(ioutil.Discard, resp.Body)
 		defer resp.Body.Close()
 	}
@@ -146,7 +144,6 @@ func (s *ESAPIV7) GetIndexMappings(copyAllIndexes bool, indexNames string) (stri
 		log.Error(errs)
 		return "", 0, nil, errs[0]
 	}
-
 
 	if resp.StatusCode != 200 {
 		return "", 0, nil, errors.New(body)
@@ -201,29 +198,28 @@ func (s *ESAPIV7) GetIndexMappings(copyAllIndexes bool, indexNames string) (stri
 	return indexNames, i, &idxs, nil
 }
 
-
-func (s *ESAPIV7) UpdateIndexMapping(indexName string,settings map[string]interface{}) error {
+func (s *ESAPIV7) UpdateIndexMapping(indexName string, settings map[string]interface{}) error {
 
 	log.Debug("start update mapping: ", indexName, settings)
 
-	delete(settings,"dynamic_templates")
+	delete(settings, "dynamic_templates")
 
 	//for name, mapping := range settings {
 
-		log.Debug("start update mapping: ", indexName,", ",settings)
+	log.Debug("start update mapping: ", indexName, ", ", settings)
 
-		url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexName)
+	url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexName)
 
-		body := bytes.Buffer{}
-		enc := json.NewEncoder(&body)
-		enc.Encode(settings)
-		res, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
-		if(err!=nil){
-			log.Error(url)
-			log.Error(body.String())
-			log.Error(err,res)
-			panic(err)
-		}
+	body := bytes.Buffer{}
+	enc := json.NewEncoder(&body)
+	enc.Encode(settings)
+	res, err := Request("POST", url, s.Auth, &body, s.HttpProxy)
+	if err != nil {
+		log.Error(url)
+		log.Error(body.String())
+		log.Error(err, res)
+		panic(err)
+	}
 	//}
 	return nil
 }

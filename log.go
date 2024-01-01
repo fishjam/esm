@@ -17,8 +17,8 @@ limitations under the License.
 package main
 
 import (
-	"strings"
 	log "github.com/cihub/seelog"
+	"strings"
 )
 
 func setInitLogging(logLevel string) {
