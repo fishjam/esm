@@ -116,21 +116,7 @@ func newDeleteRequest(client *http.Client, method, urlStr string) (*http.Request
 	return req, nil
 }
 
-//
-//func GzipHandler(req *http.Request) {
-//	var b bytes.Buffer
-//	var buf bytes.Buffer
-//	g := gzip.NewWriter(&buf)
-//
-//	_, err := io.Copy(g, &b)
-//	if err != nil {
-//		panic(err)
-//		//slog.Error(err)
-//		return
-//	}
-//}
-
-var client *http.Client = &http.Client{
+var client = &http.Client{
 	Transport: &http.Transport{
 		DisableKeepAlives:  true,
 		DisableCompression: false,
@@ -166,21 +152,6 @@ func DoRequest(compress bool, method string, loadUrl string, auth *Auth, body []
 	}
 
 	if len(body) > 0 {
-
-		//if compress {
-		//	_, err := fasthttp.WriteGzipLevel(req.BodyWriter(), data.Bytes(), fasthttp.CompressBestSpeed)
-		//	if err != nil {
-		//		panic(err)
-		//	}
-		//} else {
-		//	//req.SetBody(body)
-		//	req.SetBodyStreamWriter(func(w *bufio.Writer) {
-		//		w.Write(data.Bytes())
-		//		w.Flush()
-		//	})
-		//
-		//}
-
 		if compress {
 			_, err := fasthttp.WriteGzipLevel(req.BodyWriter(), body, fasthttp.CompressBestSpeed)
 			if err != nil {
@@ -188,11 +159,6 @@ func DoRequest(compress bool, method string, loadUrl string, auth *Auth, body []
 			}
 		} else {
 			req.SetBody(body)
-
-			//req.SetBodyStreamWriter(func(w *bufio.Writer) {
-			//	w.Write(body)
-			//	w.Flush()
-			//})
 		}
 	}
 
@@ -222,41 +188,14 @@ func DoRequest(compress bool, method string, loadUrl string, auth *Auth, body []
 	return string(resp.Body()), nil
 }
 
-func Request(method string, r string, auth *Auth, body *bytes.Buffer, proxy string) (string, error) {
-
-	//TODO use global client
-	//client = &http.Client{}
-	//
-	//if(len(proxy)>0){
-	//	proxyURL, err := url.Parse(proxy)
-	//	if(err!=nil){
-	//		log.Error(err)
-	//	}else{
-	//		transport := &http.Transport{
-	//			Proxy: http.ProxyURL(proxyURL),
-	//			DisableKeepAlives: true,
-	//			DisableCompression: false,
-	//		}
-	//		client = &http.Client{Transport: transport}
-	//	}
-	//}
-	//
-	//tr := &http.Transport{
-	//	DisableKeepAlives: true,
-	//	DisableCompression: false,
-	//	TLSClientConfig: &tls.Config{
-	//		InsecureSkipVerify: true,
-	//},
-	//}
-	//
-	//client.Transport=tr
+func Request(compress bool, method string, loadUrl string, auth *Auth, body *bytes.Buffer, proxy string) (string, error) {
 
 	var err error
 	var reqest *http.Request
 	if body != nil {
-		reqest, err = http.NewRequest(method, r, body)
+		reqest, err = http.NewRequest(method, loadUrl, body)
 	} else {
-		reqest, err = newDeleteRequest(client, method, r)
+		reqest, err = newDeleteRequest(client, method, loadUrl)
 	}
 
 	if err != nil {
@@ -267,6 +206,14 @@ func Request(method string, r string, auth *Auth, body *bytes.Buffer, proxy stri
 		reqest.SetBasicAuth(auth.User, auth.Pass)
 	}
 
+	oldTransport := client.Transport.(*http.Transport)
+	if len(proxy) > 0 {
+		proxyUrl := VerifyWithResult(url.Parse(proxy)).(*url.URL)
+		proxyFunc := http.ProxyURL(proxyUrl)
+		oldTransport.Proxy = proxyFunc
+	} else {
+		oldTransport.Proxy = nil
+	}
 	reqest.Header.Set("Content-Type", "application/json")
 
 	//enable gzip
@@ -292,7 +239,7 @@ func Request(method string, r string, auth *Auth, body *bytes.Buffer, proxy stri
 
 	respBody, err := io.ReadAll(resp.Body)
 
-	log.Error(SubString(string(respBody), 0, 500))
+	//log.Error(SubString(string(respBody), 0, 500))
 
 	if err != nil {
 		log.Error(SubString(string(err.Error()), 0, 500))

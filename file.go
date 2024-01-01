@@ -23,6 +23,7 @@ import (
 	log "github.com/cihub/seelog"
 	"io"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -73,7 +74,13 @@ func (c *Migrator) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
 	var err1 error
 
 	if checkFileIsExist(c.Config.DumpOutFile) {
-		f, err1 = os.OpenFile(c.Config.DumpOutFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+		flag := os.O_WRONLY
+		if c.Config.TruncateOutFile {
+			flag |= os.O_TRUNC
+		} else {
+			flag |= os.O_APPEND
+		}
+		f, err1 = os.OpenFile(c.Config.DumpOutFile, flag, os.ModeAppend)
 		if err1 != nil {
 			log.Error(err1)
 			return
@@ -88,6 +95,18 @@ func (c *Migrator) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
 	}
 
 	w := bufio.NewWriter(f)
+	skipFields := make([]string, 0)
+	if len(c.Config.SkipFields) > 0 {
+		//skip fields
+		if !strings.Contains(c.Config.SkipFields, ",") {
+			skipFields = append(skipFields, c.Config.SkipFields)
+		} else {
+			fields := strings.Split(c.Config.SkipFields, ",")
+			for _, field := range fields {
+				skipFields = append(skipFields, field)
+			}
+		}
+	}
 
 READ_DOCS:
 	for {
@@ -104,6 +123,11 @@ READ_DOCS:
 		for _, key := range []string{"_index", "_type", "_source", "_id"} {
 			if _, ok := docI[key]; !ok {
 				break READ_DOCS
+			}
+		}
+		for _, key := range skipFields {
+			if _, found := docI[key]; found {
+				delete(docI, key)
 			}
 		}
 

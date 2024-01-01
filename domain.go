@@ -107,6 +107,7 @@ type Config struct {
 	// config options
 	SourceEs            string `short:"s" long:"source"  description:"source elasticsearch instance, ie: http://localhost:9200"`
 	Query               string `short:"q" long:"query"  description:"query against source elasticsearch instance, filter data before migrate, ie: name:medcl"`
+	SortField           string `long:"sort" description:"sort field when scroll, ie: _id" default:"_id"`
 	TargetEs            string `short:"d" long:"dest"    description:"destination elasticsearch instance, ie: http://localhost:9201"`
 	SourceEsAuthStr     string `short:"m" long:"source_auth"  description:"basic auth of source elasticsearch instance, ie: user:pass"`
 	TargetEsAuthStr     string `short:"n" long:"dest_auth"  description:"basic auth of target elasticsearch instance, ie: user:pass"`
@@ -127,12 +128,15 @@ type Config struct {
 	WaitForGreen        bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay"`
 	LogLevel            string `short:"v" long:"log"            description:"setting log level,options:trace,debug,info,warn,error"  default:"INFO"`
 	DumpOutFile         string `short:"o" long:"output_file"            description:"output documents of source index into local file" `
+	TruncateOutFile     bool   `long:"truncate_output" description:"truncate before dump to output file" `
 	DumpInputFile       string `short:"i" long:"input_file"            description:"indexing from local dump file" `
 	InputFileType       string `long:"input_file_type"                 description:"the data type of input file, options: dump, json_line, json_array, log_line" default:"dump" `
 	SourceProxy         string `long:"source_proxy"            description:"set proxy to source http connections, ie: http://127.0.0.1:8080"`
 	TargetProxy         string `long:"dest_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
 	Refresh             bool   `long:"refresh"                 description:"refresh after migration finished"`
+	Sync                bool   `long:"sync"                   description:"sync will use scroll for both source and target index, compare the data and sync(index/delete)"`
 	Fields              string `long:"fields"                 description:"filter source fields, comma separated, ie: col1,col2,col3,..." `
+	SkipFields          string `long:"skip"                   description:"skip source fields, comma separated, ie: col1,col2,col3,..." `
 	RenameFields        string `long:"rename"                 description:"rename source fields, comma separated, ie: _type:type, name:myname" `
 	LogstashEndpoint    string `short:"l"  long:"logstash_endpoint"    description:"target logstash tcp endpoint, ie: 127.0.0.1:5055" `
 	LogstashSecEndpoint bool   `long:"secured_logstash_endpoint"    description:"target logstash tcp endpoint was secured by TLS" `
