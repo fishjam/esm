@@ -85,7 +85,7 @@ func (s *ESAPIV7) NewScroll(indexNames string, scrollTime string, docBufferCount
 	//}
 
 	if errs != nil {
-		log.Error(errs)
+		//log.Error(errs)
 		return nil, errs
 	}
 
