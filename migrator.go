@@ -567,8 +567,9 @@ func (m *Migrator) SyncBetweenIndex(srcEsApi ESAPI, dstEsApi ESAPI, cfg *Config)
 	//dstBar.FinishPrint("Dest End")
 	//pool.Stop()
 
-	log.Infof("srcRecordIndex=%d, dstRecordIndex=%d, add=%d, update=%d, delete=%d",
-		srcRecordIndex, dstRecordIndex,
-		addCount, updateCount, deleteCount)
+        log.Infof("sync %s(%d) to %s(%d), add=%d, update=%d, delete=%d",
+                cfg.SourceIndexNames, srcRecordIndex, cfg.TargetIndexName, dstRecordIndex,
+                addCount, updateCount, deleteCount)
+
 	//log.Infof("diffDocMaps=%+v", diffDocMaps)
 }
