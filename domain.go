@@ -134,9 +134,9 @@ type Config struct {
 	SourceProxy         string `long:"source_proxy"            description:"set proxy to source http connections, ie: http://127.0.0.1:8080"`
 	TargetProxy         string `long:"dest_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
 	Refresh             bool   `long:"refresh"                 description:"refresh after migration finished"`
-	Sync                bool   `long:"sync"                   description:"sync will use scroll for both source and target index, compare the data and sync(index/delete)"`
-	Fields              string `long:"fields"                 description:"filter source fields, comma separated, ie: col1,col2,col3,..." `
-	SkipFields          string `long:"skip"                   description:"skip source fields, comma separated, ie: col1,col2,col3,..." `
+	Sync                bool   `long:"sync"                   description:"sync will use scroll for both source and target index, compare the data and sync(index/update/delete)"`
+	Fields              string `long:"fields"                 description:"filter source fields(white list), comma separated, ie: col1,col2,col3,..." `
+	SkipFields          string `long:"skip"                   description:"skip source fields(black list), comma separated, ie: col1,col2,col3,..." `
 	RenameFields        string `long:"rename"                 description:"rename source fields, comma separated, ie: _type:type, name:myname" `
 	LogstashEndpoint    string `short:"l"  long:"logstash_endpoint"    description:"target logstash tcp endpoint, ie: 127.0.0.1:5055" `
 	LogstashSecEndpoint bool   `long:"secured_logstash_endpoint"    description:"target logstash tcp endpoint was secured by TLS" `
